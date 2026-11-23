@@ -59,6 +59,20 @@ def test_without_leak_file(sample_dir):
     assert "leak_target" not in t.columns and len(t) == 4
 
 
+def test_main_split_leak_file_is_loaded(sample_dir):
+    """scripts/leak_flags.py --split main writes leak_flags_main.csv; its flags must not be silently dropped."""
+    import os
+    path = os.path.join(sample_dir, "leak_flags.csv")
+    header, *rows = open(path).read().splitlines()
+    pilot = [r for r in rows if not r.startswith("cfgB,")]
+    main = [r.replace(",pilot,", ",main,") for r in rows if r.startswith("cfgB,")]
+    open(path, "w").write("\n".join([header] + pilot) + "\n")
+    open(os.path.join(sample_dir, "leak_flags_main.csv"), "w").write("\n".join([header] + main) + "\n")
+    t = pt.load_step_table(sample_dir)
+    assert t.has_leak_flags.all()
+    assert t.loc[t.step_id == "cfgB|1|4", "verbatim_leak"].item()
+    assert t.loc[t.step_id == "cfgA|1|3", "leak_target"].item()
+
 def test_to_scoring_frame_and_scoring_runs(sample_dir):
     t = pt.load_step_table(sample_dir)
     rng = np.random.default_rng(0)

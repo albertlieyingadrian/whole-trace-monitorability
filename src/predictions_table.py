@@ -15,6 +15,8 @@ import os
 import pandas as pd
 
 QUARTER_TO_POSITION = {"early": 1, "early_mid": 2, "late_mid": 3, "late": 4}
+# file-name suffixes used by scripts/leak_flags.py: "" for --split pilot, "_main" for --split main
+LEAK_FLAG_SUFFIXES = ("", "_main")
 CONDITION_ALIASES = {"T+R": "T_R", "R-only": "R_only", "T_R": "T_R", "R_only": "R_only", "T0": "T0", "T": "T"}
 
 
@@ -23,8 +25,9 @@ def _read(path: str) -> pd.DataFrame:
 
 
 def load_step_table(sample_dir: str = "sample", split: str | None = None) -> pd.DataFrame:
-    """One row per test step. Needs sample/steps.csv and sample/episodes.csv; uses sample/leak_flags.csv if present
-    (pilot only for now: main-split leak flags are generated only after the pre-registration freeze)."""
+    """One row per test step. Needs sample/steps.csv and sample/episodes.csv. Uses the leak flags written by
+    scripts/leak_flags.py if present: sample/leak_flags.csv (pilot) and sample/leak_flags_main.csv (main; generated
+    only after the pre-registration freeze). Steps with no leak-flag row get has_leak_flags=False."""
     steps = _read(os.path.join(sample_dir, "steps.csv"))
     eps = _read(os.path.join(sample_dir, "episodes.csv"))
     keep = ["config", "episode_id", "main_task_score", "main_task_success", "attempt"]
@@ -39,9 +42,10 @@ def load_step_table(sample_dir: str = "sample", split: str | None = None) -> pd.
     t["multi_call"] = t["n_tool_calls"] > 1
     t["attempt_gt1"] = t["attempt"] > 1
 
-    lf_path = os.path.join(sample_dir, "leak_flags.csv")
-    if os.path.exists(lf_path):
-        lf = _read(lf_path)
+    lf_paths = [os.path.join(sample_dir, f"leak_flags{suffix}.csv") for suffix in LEAK_FLAG_SUFFIXES]
+    lf_paths = [p for p in lf_paths if os.path.exists(p)]
+    if lf_paths:
+        lf = pd.concat([_read(p) for p in lf_paths], ignore_index=True)
         cols = ["config", "task_id", "step_index", "extraction_status", "command_leak", "target_leak", "basename_only_mention",
                 "target_in_earlier_reasoning", "leak_category"]
         t = t.merge(lf[cols], on=["config", "task_id", "step_index"], how="left", validate="one_to_one")
